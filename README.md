@@ -4,13 +4,13 @@
 make
 
 # start the server and connect the client
-./server <port> <mail-directory>
-./client <ip> <port>
+./server &lt;port&gt; &lt;mail-directory&gt;
+./client &lt;ip&gt; &lt;port&gt;
 
-# after the client is conncected you can enter the commands example:
+# after the client is connected you can enter the commands example:
 Enter command (SEND, LIST, READ, DEL, QUIT): SEND 
-Sender: <sender-name>
-Receiver: <receiver-name>
+Sender: &lt;sender-name&gt;
+Receiver: &lt;receiver-name&gt;
 Subject: test
 Message (end with a single '.'): 
 testtesttest
