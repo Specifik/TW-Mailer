@@ -1,28 +1,16 @@
 CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -pedantic -O2
+LDFLAGS = -lldap -llber -lpthread
 
-# Executables
-CLIENT_EXEC = client
-SERVER_EXEC = server
+TARGETS = client server
 
-# Source files
-CLIENT_SRC = client.cpp
-SERVER_SRC = server.cpp
+all: $(TARGETS)
 
-# Target
-all: $(CLIENT_EXEC) $(SERVER_EXEC)
+client: client.cpp
+	$(CXX) $(CXXFLAGS) -o client client.cpp
 
-# Build client executable
-$(CLIENT_EXEC): $(CLIENT_SRC)
-	$(CXX) $(CXXFLAGS) -o $@ $<
+server: server.cpp
+	$(CXX) $(CXXFLAGS) -o server server.cpp $(LDFLAGS)
 
-# Build server executable
-$(SERVER_EXEC): $(SERVER_SRC)
-	$(CXX) $(CXXFLAGS) -o $@ $<
-
-# Clean up
 clean:
-	rm -f $(CLIENT_EXEC) $(SERVER_EXEC) *.o
-	rm -rf mail
-
-.PHONY: all clean
+	rm -f $(TARGETS)

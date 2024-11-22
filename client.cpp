@@ -1,3 +1,4 @@
+// client.cpp
 #include <iostream>
 #include <string>
 #include <cstring>
@@ -6,13 +7,14 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <termios.h>  // Include termios for disabling echo
 
 const int BUFFER_SIZE = 1024;
 
 class MailClient {
 public:
     MailClient(const std::string& ip, int port)
-        : serverIP(ip), serverPort(port) {}
+        : serverIP(ip), serverPort(port), authenticated(false) {}
 
     void run();
 
@@ -20,11 +22,15 @@ private:
     std::string serverIP;
     int serverPort;
     int sockfd;
+    bool authenticated;
 
     bool connectToServer();
     void interact();
     void sendCommand(const std::string& cmd);
     std::string readResponse();
+    bool login();
+
+    std::string getPassword();  // Function to read password without echo
 };
 
 bool MailClient::connectToServer() {
@@ -66,17 +72,72 @@ std::string MailClient::readResponse() {
     return response;
 }
 
+std::string MailClient::getPassword() {
+    std::string password;
+    struct termios oldt, newt;
+
+    // Save old terminal attributes
+    tcgetattr(STDIN_FILENO, &oldt);
+    newt = oldt;
+
+    // Disable echo
+    newt.c_lflag &= ~(ECHO);
+
+    // Set new terminal attributes
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+
+    // Read password
+    std::getline(std::cin, password);
+
+    // Restore old terminal attributes
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+
+    // Move to the next line after password input
+    std::cout << std::endl;
+
+    return password;
+}
+
+bool MailClient::login() {
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        std::string username, password;
+        std::cout << "Username: ";
+        std::getline(std::cin, username);
+        std::cout << "Password: ";
+
+        // Read password without echo
+        password = getPassword();
+
+        std::ostringstream cmdStream;
+        cmdStream << "LOGIN\n" << username << "\n" << password << "\n";
+        sendCommand(cmdStream.str());
+
+        std::string response = readResponse();
+        if (response == "OK\n") {
+            authenticated = true;
+            std::cout << "Login successful.\n";
+            return true;
+        } else {
+            std::cout << "Login failed.\n";
+        }
+    }
+    return false;
+}
+
 void MailClient::interact() {
+    if (!login()) {
+        std::cout << "Failed to login after 3 attempts. Exiting.\n";
+        return;
+    }
+
     std::string input;
     while (true) {
         std::cout << "Enter command (SEND, LIST, READ, DEL, QUIT): ";
         std::getline(std::cin, input);
 
         if (input == "SEND") {
-            std::string sender, receiver, subject, messageLine, messageContent;
+            std::string receiver, subject, messageLine, messageContent;
 
-            std::cout << "Sender: ";
-            std::getline(std::cin, sender);
             std::cout << "Receiver: ";
             std::getline(std::cin, receiver);
             std::cout << "Subject: ";
@@ -90,44 +151,49 @@ void MailClient::interact() {
             }
 
             std::ostringstream cmdStream;
-            cmdStream << "SEND\n" << sender << "\n" << receiver << "\n" << subject << "\n" << messageContent << ".\n";
+            cmdStream << "SEND\n" << receiver << "\n" << subject << "\n" << messageContent << ".\n";
             sendCommand(cmdStream.str());
 
             std::string response = readResponse();
             std::cout << response;
         } else if (input == "LIST") {
-            std::string username;
-            std::cout << "Username: ";
-            std::getline(std::cin, username);
-
-            std::ostringstream cmdStream;
-            cmdStream << "LIST\n" << username << "\n";
-            sendCommand(cmdStream.str());
-
+            sendCommand("LIST\n");
             std::string response = readResponse();
-            std::cout << response;
+            std::istringstream respStream(response);
+            std::string line;
+            if (std::getline(respStream, line)) {
+                int count = std::stoi(line);
+                std::cout << "You have " << count << " messages:\n";
+                for (int i = 0; i < count; ++i) {
+                    if (std::getline(respStream, line)) {
+                        std::cout << i + 1 << ": " << line << "\n";
+                    }
+                }
+            } else {
+                std::cout << "Error reading response.\n";
+            }
         } else if (input == "READ") {
-            std::string username, msgNum;
-            std::cout << "Username: ";
-            std::getline(std::cin, username);
+            std::string msgNum;
             std::cout << "Message Number: ";
             std::getline(std::cin, msgNum);
 
             std::ostringstream cmdStream;
-            cmdStream << "READ\n" << username << "\n" << msgNum << "\n";
+            cmdStream << "READ\n" << msgNum << "\n";
             sendCommand(cmdStream.str());
 
             std::string response = readResponse();
-            std::cout << response;
+            if (response.substr(0, 3) == "OK\n") {
+                std::cout << "Message Content:\n" << response.substr(3);
+            } else {
+                std::cout << "Error reading message.\n";
+            }
         } else if (input == "DEL") {
-            std::string username, msgNum;
-            std::cout << "Username: ";
-            std::getline(std::cin, username);
+            std::string msgNum;
             std::cout << "Message Number: ";
             std::getline(std::cin, msgNum);
 
             std::ostringstream cmdStream;
-            cmdStream << "DEL\n" << username << "\n" << msgNum << "\n";
+            cmdStream << "DEL\n" << msgNum << "\n";
             sendCommand(cmdStream.str());
 
             std::string response = readResponse();
@@ -150,7 +216,7 @@ void MailClient::run() {
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {
-        std::cerr << "Usage: ./twmailer-client <ip> <port>\n";
+        std::cerr << "Usage: ./client <ip> <port>\n";
         return EXIT_FAILURE;
     }
 
