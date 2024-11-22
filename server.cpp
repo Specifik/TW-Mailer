@@ -37,12 +37,6 @@ struct ClientSession {
     int loginAttempts = 0;
 };
 
-struct ThreadArgs {
-    int clientSock;
-    sockaddr_in clientAddr;
-    class MailServer* server;
-};
-
 class MailServer {
 public:
     MailServer(int port, const std::string& mailDir)
@@ -76,19 +70,6 @@ private:
     void loadBlacklist();
     void saveBlacklist();
 };
-
-void* clientHandler(void* arg) {
-    ThreadArgs* threadArgs = (ThreadArgs*)arg;
-    int clientSock = threadArgs->clientSock;
-    sockaddr_in clientAddr = threadArgs->clientAddr;
-    MailServer* server = threadArgs->server;
-    delete threadArgs;
-
-    server->handleClient(clientSock, clientAddr);
-
-    close(clientSock);
-    pthread_exit(nullptr);
-}
 
 void MailServer::run() {
     int serverSock = socket(AF_INET, SOCK_STREAM, 0);
@@ -413,7 +394,12 @@ void MailServer::saveMessage(const Message& msg) {
         fs::create_directory(userDir);
     }
 
-    int msgNum = std::distance(fs::directory_iterator(userDir), fs::directory_iterator()) + 1;
+    int msgNum = 1;
+    for (const auto& entry : fs::directory_iterator(userDir)) {
+        if (entry.is_regular_file()) {
+            ++msgNum;
+        }
+    }
 
     std::string msgFile = userDir + "/" + std::to_string(msgNum) + ".txt";
     std::ofstream outfile(msgFile);
@@ -421,7 +407,16 @@ void MailServer::saveMessage(const Message& msg) {
         outfile << "From: " << msg.sender << "\n";
         outfile << "To: " << msg.receiver << "\n";
         outfile << "Subject: " << msg.subject << "\n";
-        outfile << "Date: " << std::time(nullptr) << "\n";
+
+        // Format the date
+        std::time_t now = std::time(nullptr);
+        char dateStr[100];
+        if (std::strftime(dateStr, sizeof(dateStr), "%a, %d %b %Y %H:%M:%S", std::localtime(&now))) {
+            outfile << "Date: " << dateStr << "\n";
+        } else {
+            outfile << "Date: " << now << "\n"; // Fallback to timestamp
+        }
+
         outfile << "\n" << msg.content;
         outfile.close();
         std::cout << "Message saved to " << msgFile << "\n";
@@ -429,6 +424,7 @@ void MailServer::saveMessage(const Message& msg) {
         std::cerr << "Failed to open file " << msgFile << " for writing\n";
     }
 }
+
 
 std::vector<std::string> MailServer::listMessages(const std::string& username) {
     std::lock_guard<std::mutex> lock(fsMutex);
